@@ -24,4 +24,3 @@ result = agent.invoke({
         {"role": "user", "content": "详细调研Langchain最新发展写一个总结"}
     ]
 })
-pass
