@@ -1,0 +1,209 @@
+<!DOCTYPE html> <html lang="zh-CN"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>实时语音识别</title> <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script> <style> body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; } .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); } .control-panel { text-align: center; margin-bottom: 30px; } .btn { padding: 12px 24px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin: 0 10px; transition: all 0.3s; } .btn-start { background-color: #4CAF50; color: white; } .btn-stop { background-color: #f44336; color: white; } .btn:disabled { background-color: #cccccc; cursor: not-allowed; } .status { padding: 10px; margin: 10px 0; border-radius: 5px; text-align: center; } .status-recording { background-color: #ffebee; color: #c62828; } .status-ready { background-color: #e8f5e8; color: #2e7d32; } .result-area { border: 1px solid #ddd; border-radius: 5px; padding: 15px; min-height: 200px; max-height: 400px; overflow-y: auto; background-color: #fafafa; } .result-item { margin: 10px 0; padding: 8px; border-left: 3px solid #2196F3; background-color: white; } .timestamp { font-size: 12px; color: #666; } </style> </head> <body> <div class="container"> <h1>实时语音识别系统</h1>    <div class="control-panel">
+        <button id="startBtn" class="btn btn-start" onclick="startRecording()">
+            开始录音
+        </button>
+        <button id="stopBtn" class="btn btn-stop" onclick="stopRecording()" disabled>
+            停止录音
+        </button>
+    </div>
+
+    <div id="status" class="status status-ready">
+        准备就绪，点击开始录音
+    </div>
+
+    <h3>识别结果：</h3>
+    <div id="resultArea" class="result-area"></div>
+</div>
+
+<script>
+    let socket = null;
+    let mediaRecorder = null;
+    let audioStream = null;
+    let isRecording = false;
+
+    // 初始化WebSocket连接
+    function initWebSocket() {
+        socket = io();
+
+        socket.on('connect', function() {
+            updateStatus('已连接到服务器', 'ready');
+        });
+
+        socket.on('disconnect', function() {
+            updateStatus('与服务器断开连接', 'error');
+            stopRecording();
+        });
+
+        // 接收识别结果
+        socket.on('recognition_result', function(data) {
+            addResult(data.text);
+        });
+
+        socket.on('status', function(data) {
+            updateStatus(data.message, 'ready');
+        });
+
+        socket.on('error', function(data) {
+            updateStatus(data.message, 'error');
+        });
+
+        socket.on('sentence_end', function(data) {
+            console.log('句子识别完成:', data);
+        });
+    }
+
+    // 开始录音
+    async function startRecording() {
+        try {
+            // 初始化WebSocket
+            if (!socket) {
+                initWebSocket();
+            }
+
+            // 获取麦克风权限
+            audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            });
+
+            // 创建MediaRecorder
+            mediaRecorder = new MediaRecorder(audioStream, {
+                mimeType: 'audio/webm;codecs=opus'
+            });
+
+            let audioChunks = [];
+
+            mediaRecorder.ondataavailable = function(event) {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+
+                    // 将音频数据转换为ArrayBuffer发送到后端
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        const arrayBuffer = reader.result;
+                        socket.emit('audio_data', arrayBuffer);
+                    };
+                    reader.readAsArrayBuffer(event.data);
+                }
+            };
+
+            // 每100ms发送一次数据
+            mediaRecorder.start(100);
+            isRecording = true;
+
+            updateUI(true);
+            updateStatus('正在录音中...', 'recording');
+
+        } catch (error) {
+            console.error('启动录音失败:', error);
+            updateStatus('启动录音失败: ' + error.message, 'error');
+        }
+    }
+    // 检查音频数据是否有效
+    function validateAudioData(audioBuffer) {
+        if (!audioBuffer || audioBuffer.byteLength === 0) {
+            console.log('前端：音频数据为空');
+            return false;
+        }
+
+        if (audioBuffer.byteLength < 320) {
+            console.log(`前端：音频数据过短，长度：${audioBuffer.byteLength}`);
+            return false;
+        }
+
+        return true;
+    }
+
+    // 修改mediaRecorder的ondataavailable事件
+    mediaRecorder.ondataavailable = function(event) {
+        if (event.data.size > 0) {
+            audioChunks.push(event.data);
+
+            const reader = new FileReader();
+            reader.onload = function() {
+                const arrayBuffer = reader.result;
+
+                // 前端验证
+                if (validateAudioData(arrayBuffer)) {
+                    socket.emit('audio_data', arrayBuffer);
+                } else {
+                    console.log('前端：音频数据验证失败，丢弃数据包');
+                }
+            };
+            reader.readAsArrayBuffer(event.data);
+        }
+    };
+
+    // 停止录音
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            mediaRecorder = null;
+        }
+
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
+
+        isRecording = false;
+        updateUI(false);
+        updateStatus('录音已停止', 'ready');
+    }
+
+    // 更新UI状态
+    function updateUI(recording) {
+        document.getElementById('startBtn').disabled = recording;
+        document.getElementById('stopBtn').disabled = !recording;
+    }
+
+    // 更新状态显示
+    function updateStatus(message, type) {
+        const statusElement = document.getElementById('status');
+        statusElement.textContent = message;
+        statusElement.className = 'status';
+
+        if (type === 'recording') {
+            statusElement.classList.add('status-recording');
+        } else if (type === 'ready') {
+            statusElement.classList.add('status-ready');
+        } else if (type === 'error') {
+            statusElement.style.backgroundColor = '#ffebee';
+            statusElement.style.color = '#c62828';
+        }
+    }
+
+    // 添加识别结果
+    function addResult(text) {
+        const resultArea = document.getElementById('resultArea');
+        const resultItem = document.createElement('div');
+        resultItem.className = 'result-item';
+
+        const timestamp = new Date().toLocaleTimeString();
+        resultItem.innerHTML = `
+            <div class="timestamp">${timestamp}</div>
+            <div>${text}</div>
+        `;
+
+        resultArea.appendChild(resultItem);
+        resultArea.scrollTop = resultArea.scrollHeight;
+    }
+
+    // 页面加载时初始化
+    window.onload = function() {
+        updateUI(false);
+    };
+
+    // 页面关闭时清理资源
+    window.onbeforeunload = function() {
+        stopRecording();
+        if (socket) {
+            socket.disconnect();
+        }
+    };
+</script>
+</body> </html>
