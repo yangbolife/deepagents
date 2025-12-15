@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Three.js 交互式粒子系统 - 手势控制</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+
+        /* 视频流和 Three.js 覆盖层 */
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #video-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* 隐藏的视频元素，用于 MediaPipe 输入 */
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            visibility: hidden; /* 隐藏视频流，只显示 Three.js 渲染 */
+            transform: scaleX(-1); /* 镜像，让用户感觉自然 */
+        }
+
+        /* 状态显示 */
+        #status-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+
+        /* dat.GUI 默认样式调整 */
+        .dg.main {
+            z-index: 1001 !important;
+        }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675466861/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="video-container">
+        <video id="video" playsinline></video>
+        </div>
+
+    <div id="status-display">
+        **手势控制状态**
+        <br>
+        摄像机: <span id="cam-status">加载中...</span>
+        <br>
+        双手距离 (0-10): <span id="distance-display">0.00</span>
+        <br>
+        手势控制: <span id="control-status">等待双手...</span>
+    </div>
+
+    <script src="../static/threejs_particle.js"></script>
+    <script src="../static/mediapipe_hand_detector.js"></script>
+</body>
+</html>
